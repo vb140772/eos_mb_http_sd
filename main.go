@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -113,12 +114,12 @@ func (m *MinIOClient) ListBuckets(ctx context.Context) ([]minio.BucketInfo, erro
 // GetClusterNodes retrieves all nodes in the MinIO cluster using admin API
 func (m *MinIOClient) GetClusterNodes(ctx context.Context) ([]string, error) {
 	// Try to get cluster info using admin API
-	// First, try to get cluster info from the endpoint
 	url := fmt.Sprintf("%s://%s/minio/admin/v3/info", m.getScheme(), m.config.MinIOEndpoint)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		logrus.Warnf("Failed to create request for cluster info: %v", err)
+		return m.getKnownNodes(), nil
 	}
 
 	// Add MinIO credentials
@@ -127,21 +128,29 @@ func (m *MinIOClient) GetClusterNodes(ctx context.Context) ([]string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cluster info: %w", err)
+		logrus.Warnf("Failed to get cluster info: %v", err)
+		return m.getKnownNodes(), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// If admin API fails, fall back to using the configured endpoint
-		// This handles cases where the cluster is still starting or admin API is not available
-		logrus.Warnf("Admin API returned status %d, falling back to configured endpoint", resp.StatusCode)
-		return []string{m.config.MinIOEndpoint}, nil
+		logrus.Warnf("Admin API returned status %d, using known nodes", resp.StatusCode)
+		return m.getKnownNodes(), nil
 	}
 
+	// Read the response body for debugging
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logrus.Warnf("Failed to read response body: %v", err)
+		return m.getKnownNodes(), nil
+	}
+
+	logrus.Debugf("Admin API response: %s", string(bodyBytes))
+
 	var clusterInfo map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&clusterInfo); err != nil {
-		logrus.Warnf("Failed to decode cluster info, falling back to configured endpoint: %v", err)
-		return []string{m.config.MinIOEndpoint}, nil
+	if err := json.Unmarshal(bodyBytes, &clusterInfo); err != nil {
+		logrus.Warnf("Failed to decode cluster info, using known nodes: %v", err)
+		return m.getKnownNodes(), nil
 	}
 
 	// Extract nodes from cluster info
@@ -150,29 +159,43 @@ func (m *MinIOClient) GetClusterNodes(ctx context.Context) ([]string, error) {
 		for _, server := range servers {
 			if serverMap, ok := server.(map[string]interface{}); ok {
 				if endpoint, ok := serverMap["endpoint"].(string); ok {
-					// Convert internal endpoint to external accessible endpoint
-					// For Docker setup, we need to map internal names to external ports
-					externalEndpoint := m.mapInternalToExternalEndpoint(endpoint)
-					nodes = append(nodes, externalEndpoint)
+					// Use the endpoint directly as returned by admin API
+					// This should be in the format minio1:9000, minio2:9000, etc.
+					nodes = append(nodes, endpoint)
 				}
 			}
 		}
 	}
 
-	// If no nodes found, fall back to configured endpoint
+	// If no nodes found in admin API, use known nodes
 	if len(nodes) == 0 {
-		logrus.Warnf("No nodes found in cluster info, falling back to configured endpoint")
-		return []string{m.config.MinIOEndpoint}, nil
+		logrus.Warnf("No nodes found in admin API response, using known nodes")
+		return m.getKnownNodes(), nil
 	}
 
-	logrus.Infof("Discovered %d cluster nodes: %v", len(nodes), nodes)
+	logrus.Infof("Discovered %d cluster nodes from admin API: %v", len(nodes), nodes)
 	return nodes, nil
 }
 
-// mapInternalToExternalEndpoint maps internal MinIO endpoints to external accessible endpoints
+// getKnownNodes returns the known MinIO node endpoints for Docker setup
+func (m *MinIOClient) getKnownNodes() []string {
+	// For Docker setup, return the exact node names as shown by 'mc admin info local'
+	// These are the Docker service names that Prometheus can access via Docker network
+	knownNodes := []string{
+		"minio1:9000", // As shown by mc admin info local
+		"minio2:9000", // As shown by mc admin info local
+		"minio3:9000", // As shown by mc admin info local
+		"minio4:9000", // As shown by mc admin info local
+	}
+
+	logrus.Infof("Using known nodes: %v", knownNodes)
+	return knownNodes
+}
+
+// mapInternalToExternalEndpoint maps internal MinIO endpoints to Docker service names
 func (m *MinIOClient) mapInternalToExternalEndpoint(internalEndpoint string) string {
-	// For Docker setup, map internal service names to external ports
-	// This is a simplified mapping - in production you might want more sophisticated logic
+	// For Docker setup, map internal service names to Docker service names
+	// This allows Prometheus (running in Docker) to access MinIO nodes via Docker network
 
 	// Extract hostname from internal endpoint
 	host, _, err := net.SplitHostPort(internalEndpoint)
@@ -181,16 +204,16 @@ func (m *MinIOClient) mapInternalToExternalEndpoint(internalEndpoint string) str
 		host = internalEndpoint
 	}
 
-	// Map internal hostnames to external ports for Docker setup
+	// Map internal hostnames to Docker service names
 	switch host {
 	case "minio1":
-		return fmt.Sprintf("localhost:9001")
+		return "minio1:9000" // Docker service name + internal port
 	case "minio2":
-		return fmt.Sprintf("localhost:9003")
+		return "minio2:9000" // Docker service name + internal port
 	case "minio3":
-		return fmt.Sprintf("localhost:9005")
+		return "minio3:9000" // Docker service name + internal port
 	case "minio4":
-		return fmt.Sprintf("localhost:9007")
+		return "minio4:9000" // Docker service name + internal port
 	default:
 		// For unknown hosts, return the original endpoint
 		return internalEndpoint
@@ -335,11 +358,7 @@ func (m *MinIOClient) handleServiceDiscovery(w http.ResponseWriter, r *http.Requ
 	// Special handling for minio-buckets job - return all buckets
 	if jobName == "minio-buckets" {
 		// Get cluster nodes for better monitoring
-		nodes, err := m.GetClusterNodes(ctx)
-		if err != nil {
-			logrus.Warnf("Failed to get cluster nodes, falling back to configured endpoint: %v", err)
-			nodes = []string{m.config.MinIOEndpoint}
-		}
+		nodes, _ := m.GetClusterNodes(ctx)
 
 		buckets, err := m.ListBuckets(ctx)
 		if err != nil {
@@ -353,43 +372,31 @@ func (m *MinIOClient) handleServiceDiscovery(w http.ResponseWriter, r *http.Requ
 			logrus.Infof("After filtering, %d buckets remain", len(filteredBuckets))
 
 			for _, bucket := range filteredBuckets {
-				// Create a target for each node for each bucket
-				for _, node := range nodes {
-					response = append(response, ServiceDiscoveryResponse{
-						Targets: []string{node},
-						Labels: map[string]string{
-							"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
-							"__scheme__":         m.getScheme(),
-							"instance":           node,
-							"job":                "minio-buckets",
-							"sd_bucket":          bucket.Name,
-							"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
-							"sd_node":            node,
-						},
-					})
-				}
+				// Create one configuration with all nodes as targets for this bucket
+				response = append(response, ServiceDiscoveryResponse{
+					Targets: nodes,
+					Labels: map[string]string{
+						"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
+						"__scheme__":         m.getScheme(),
+						"job":                "minio-buckets",
+						"sd_bucket":          bucket.Name,
+						"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
+					},
+				})
 			}
 		}
 	} else if jobName == "minio-server" {
-		// For minio-server job, get cluster nodes and create targets for each
-		nodes, err := m.GetClusterNodes(ctx)
-		if err != nil {
-			logrus.Warnf("Failed to get cluster nodes, falling back to configured endpoint: %v", err)
-			nodes = []string{m.config.MinIOEndpoint}
-		}
+		// For minio-server job, get cluster nodes and create one configuration with all nodes
+		nodes, _ := m.GetClusterNodes(ctx)
 
-		for _, node := range nodes {
-			response = append(response, ServiceDiscoveryResponse{
-				Targets: []string{node},
-				Labels: map[string]string{
-					"__metrics_path__": "/minio/metrics/v3",
-					"__scheme__":       m.getScheme(),
-					"instance":         node,
-					"job":              "minio-server",
-					"sd_node":          node,
-				},
-			})
-		}
+		response = append(response, ServiceDiscoveryResponse{
+			Targets: nodes,
+			Labels: map[string]string{
+				"__metrics_path__": "/minio/metrics/v3",
+				"job":              "minio-server",
+				"__scheme__":       m.getScheme(),
+			},
+		})
 	} else {
 		// For other jobs, use the standard approach
 		for _, staticConfig := range targetConfig.StaticConfigs {
