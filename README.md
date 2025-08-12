@@ -96,9 +96,88 @@ The MinIO Prometheus Service Discovery service is a Go-based HTTP service that i
 
 ## ⚙️ **Configuration**
 
-### **Environment Variables**
+The service supports multiple configuration methods with the following priority (highest to lowest):
 
-The service is configured via environment variables:
+1. **Configuration file (YAML)** - Highest priority
+2. **Command line arguments** - Override config file and environment variables
+3. **Environment variables** - Used if not specified elsewhere
+4. **Default values** - Fallback values
+
+### **1. Configuration File (YAML) - Recommended**
+
+The most flexible and maintainable way to configure the service is using a YAML configuration file:
+
+```yaml
+# config.yaml
+minio_endpoint: "minio:9000"
+minio_access_key: "minioadmin"
+minio_secret_key: "minioadmin"
+minio_use_ssl: false
+listen_addr: ":8080"
+scrape_interval: "15s"
+metrics_path: "/minio/metrics/v3"
+bucket_pattern: "*"
+bucket_exclude_pattern: ""
+```
+
+**Usage:**
+```bash
+# Use default config file (config.yaml)
+minio-prometheus-sd
+
+# Use custom config file
+minio-prometheus-sd -config-file=myconfig.yaml
+
+# Use config file with specific overrides
+minio-prometheus-sd -config-file=myconfig.yaml -minio-endpoint=custom:9000
+```
+
+**Benefits:**
+- ✅ **Version controlled** - Store in Git with your application
+- ✅ **Environment specific** - Different files for dev/staging/prod
+- ✅ **Easy maintenance** - Centralized configuration management
+- ✅ **No environment pollution** - Clean shell environment
+- ✅ **Docker friendly** - Mount config files in containers
+
+### **2. Command Line Arguments**
+
+Override any configuration with command line flags:
+
+```bash
+# Show all available options
+minio-prometheus-sd -help
+
+# Override specific settings
+minio-prometheus-sd -minio-endpoint=minio:9000 -minio-access-key=mykey
+
+# Use different port and bucket pattern
+minio-prometheus-sd -listen-addr=:9090 -bucket-pattern="prod-*"
+
+# Enable SSL and set custom scrape interval
+minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
+
+# Mix with config file (command line overrides config file)
+minio-prometheus-sd -config-file=config.yaml -minio-endpoint=custom:9000
+```
+
+**Available Flags:**
+| Flag | Description | Default | Example |
+|------|-------------|---------|---------|
+| `-config-file` | Path to configuration file (YAML) | `config.yaml` | `-config-file=prod.yaml` |
+| `-minio-endpoint` | MinIO server endpoint | `localhost:9000` | `-minio-endpoint=minio:9000` |
+| `-minio-access-key` | MinIO access key | `minioadmin` | `-minio-access-key=mykey` |
+| `-minio-secret-key` | MinIO secret key | `minioadmin` | `-minio-secret-key=mysecret` |
+| `-minio-use-ssl` | Use SSL for MinIO connection | `false` | `-minio-use-ssl` |
+| `-listen-addr` | Address to listen on | `:8080` | `-listen-addr=:9090` |
+| `-scrape-interval` | Scrape interval | `15s` | `-scrape-interval=30s` |
+| `-metrics-path` | Metrics path | `/minio/metrics/v3` | `-metrics-path=/metrics` |
+| `-bucket-pattern` | Wildcard pattern for bucket inclusion | `*` | `-bucket-pattern="prod-*"` |
+| `-bucket-exclude-pattern` | Wildcard pattern for bucket exclusion | (empty) | `-bucket-exclude-pattern="*backup*"` |
+| `-help` | Show help information | - | `-help` |
+
+### **3. Environment Variables - Legacy Option**
+
+Environment variables are supported for backward compatibility but are the lowest priority:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
@@ -112,26 +191,26 @@ The service is configured via environment variables:
 | `BUCKET_PATTERN` | Wildcard pattern for bucket inclusion | `*` | No |
 | `BUCKET_EXCLUDE_PATTERN` | Wildcard pattern for bucket exclusion | (empty) | No |
 
-
-### **Configuration Examples**
-
-#### **Development Environment**
+**Usage Examples:**
 ```bash
+# Development Environment
 export MINIO_ENDPOINT="localhost:9000"
 export MINIO_ACCESS_KEY="minioadmin"
 export MINIO_SECRET_KEY="minioadmin"
 export MINIO_USE_SSL="false"
-```
+minio-prometheus-sd
 
-#### **Production Environment**
-```bash
+# Production Environment
 export MINIO_ENDPOINT="minio-prod.company.com:9000"
 export MINIO_ACCESS_KEY="prod-access-key"
 export MINIO_SECRET_KEY="prod-secret-key"
 export MINIO_USE_SSL="true"
 export BUCKET_PATTERN="prod-*"
 export BUCKET_EXCLUDE_PATTERN="*backup*"
+minio-prometheus-sd
 ```
+
+**Note:** Environment variables are overridden by command line arguments and configuration files. Use them only when the other methods are not available.
 
 ---
 
@@ -413,9 +492,16 @@ scrape_configs:
 - MinIO server running
 - Valid MinIO access credentials
 
-#### **Command Line Arguments**
+#### **Configuration Methods**
 
-The service supports command line arguments that take precedence over environment variables:
+The service supports multiple configuration methods with the following priority (highest to lowest):
+
+1. **Configuration file (YAML)** - Highest priority (recommended)
+2. **Command line arguments** - Override config file and environment variables
+3. **Environment variables** - Used if not specified elsewhere
+4. **Default values** - Fallback values
+
+**For detailed configuration options, see the [Configuration](#️-configuration) section above.**
 
 ```bash
 # Show help and available options
@@ -432,6 +518,7 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 ```
 
 **Available Flags:**
+- `-config-file`: Path to configuration file (YAML) (default: "config.yaml")
 - `-minio-endpoint`: MinIO server endpoint
 - `-minio-access-key`: MinIO access key
 - `-minio-secret-key`: MinIO secret key
@@ -453,17 +540,35 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
    go mod tidy
    ```
 
-2. **Configure environment**:
+2. **Configure the service** (choose one method):
+
+   **Option A: Configuration file (Recommended)**
+   ```bash
+   # Create config.yaml with your settings
+   cp config.yaml.example config.yaml
+   # Edit config.yaml with your MinIO details
+   ```
+
+   **Option B: Command line arguments**
+   ```bash
+   # Run with command line arguments
+   go run main.go -minio-endpoint=localhost:9000 -minio-access-key=minioadmin
+   ```
+
+   **Option C: Environment variables (Legacy)**
    ```bash
    export MINIO_ENDPOINT="localhost:9000"
    export MINIO_ACCESS_KEY="minioadmin"
    export MINIO_SECRET_KEY="minioadmin"
-
    ```
 
 3. **Run the service**:
    ```bash
+   # Using config file (recommended)
    go run main.go
+
+   # Or with specific overrides
+   go run main.go -config-file=myconfig.yaml -minio-endpoint=custom:9000
    ```
 
 ### **Using Docker**
@@ -475,20 +580,24 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 
 2. **Run the container**:
    ```bash
-   # Using environment variables
+   # Option 1: Using configuration file (Recommended)
+   docker run -p 8080:8080 -v $(pwd)/config.yaml:/app/config.yaml minio-prometheus-sd \
+     -config-file=/app/config.yaml
+
+   # Option 2: Using command line arguments
+   docker run -p 8080:8080 minio-prometheus-sd \
+     -minio-endpoint="your-minio-server:9000" \
+     -minio-access-key="your-access-key" \
+     -minio-secret-key="your-secret-key" \
+     -minio-use-ssl
+
+   # Option 3: Using environment variables (Legacy)
    docker run -p 8080:8080 \
      -e MINIO_ENDPOINT="your-minio-server:9000" \
      -e MINIO_ACCESS_KEY="your-access-key" \
      -e MINIO_SECRET_KEY="your-secret-key" \
      -e MINIO_USE_SSL="true" \
      minio-prometheus-sd
-
-   # Using command line arguments
-   docker run -p 8080:8080 minio-prometheus-sd \
-     -minio-endpoint="your-minio-server:9000" \
-     -minio-access-key="your-access-key" \
-     -minio-secret-key="your-secret-key" \
-     -minio-use-ssl
    ```
 
 ### **Docker Compose**
@@ -514,26 +623,32 @@ services:
     build: .
     ports:
       - "8080:8080"
-    # Option 1: Using environment variables
-    environment:
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_USE_SSL=false
-      - LISTEN_ADDR=:8080
-      - SCRAPE_INTERVAL=15s
-      - BUCKET_PATTERN=*
-      - BUCKET_EXCLUDE_PATTERN=
-    # Option 2: Using command line arguments (override environment variables)
-    command: >
-      -minio-endpoint=minio:9000
-      -minio-access-key=minioadmin
-      -minio-secret-key=minioadmin
-      -minio-use-ssl=false
-      -listen-addr=:8080
-      -scrape-interval=15s
-      -bucket-pattern=*
-      -bucket-exclude-pattern=
+    # Option 1: Using configuration file (Recommended)
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    command: -config-file=/app/config.yaml
+
+    # Option 2: Using command line arguments
+    # command: >
+    #   -minio-endpoint=minio:9000
+    #   -minio-access-key=minioadmin
+    #   -minio-secret-key=minioadmin
+    #   -minio-use-ssl=false
+    #   -listen-addr=:8080
+    #   -scrape-interval=15s
+    #   -bucket-pattern=*
+    #   -bucket-exclude-pattern=
+
+    # Option 3: Using environment variables (Legacy)
+    # environment:
+    #   - MINIO_ENDPOINT=minio:9000
+    #   - MINIO_ACCESS_KEY=minioadmin
+    #   - MINIO_SECRET_KEY=minioadmin
+    #   - MINIO_USE_SSL=false
+    #   - LISTEN_ADDR=:8080
+    #   - SCRAPE_INTERVAL=15s
+    #   - BUCKET_PATTERN=*
+    #   - BUCKET_EXCLUDE_PATTERN=
     depends_on:
       minio:
         condition: service_started
@@ -611,15 +726,20 @@ spec:
 
 #### **Start Service**
 ```bash
-# Using environment variables (default)
-minio-prometheus-sd
+# Option 1: Using configuration file (Recommended)
+minio-prometheus-sd -config-file=myconfig.yaml
 
-# Using command line arguments
+# Option 2: Using command line arguments
 minio-prometheus-sd -minio-endpoint=minio:9000 -minio-access-key=mykey
 
-# Mix of command line and environment variables
+# Option 3: Using environment variables (Legacy)
 export MINIO_ENDPOINT=minio:9000
-minio-prometheus-sd -minio-access-key=mykey -bucket-pattern="prod-*"
+minio-prometheus-sd
+
+# Option 4: Mix methods (config file > command line > environment variables)
+export MINIO_ENDPOINT=env-endpoint:9000
+minio-prometheus-sd -config-file=myconfig.yaml -minio-endpoint=cmd-endpoint:9000
+# Result: minio-endpoint will be "cmd-endpoint:9000" (command line overrides config file)
 ```
 
 #### **Test Endpoints**
@@ -894,17 +1014,36 @@ The MinIO Prometheus Service Discovery service provides a **comprehensive soluti
 
 ### **🚀 Getting Started**
 
-1. **Configure environment**:
+1. **Choose your configuration method**:
+
+   **Option A: Configuration file (Recommended)**
+   ```bash
+   # Copy and edit the sample config
+   cp config.yaml config.yaml.example
+   # Edit config.yaml with your MinIO details
+   ```
+
+   **Option B: Command line arguments**
+   ```bash
+   # Run with command line arguments
+   minio-prometheus-sd -minio-endpoint=your-minio-server:9000
+   ```
+
+   **Option C: Environment variables (Legacy)**
    ```bash
    export MINIO_ENDPOINT="your-minio-server:9000"
    ```
 
-3. **Start the service**:
+2. **Start the service**:
    ```bash
-   go run main.go
+   # Using config file (recommended)
+   minio-prometheus-sd
+
+   # Or with specific overrides
+   minio-prometheus-sd -config-file=myconfig.yaml -minio-endpoint=custom:9000
    ```
 
-4. **Configure Prometheus**:
+3. **Configure Prometheus**:
    ```yaml
    http_sd_configs:
      - url: 'http://localhost:8080/sd?job=minio-buckets'

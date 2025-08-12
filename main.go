@@ -16,7 +16,21 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
+
+// ConfigFile represents the YAML configuration file structure
+type ConfigFile struct {
+	MinIOEndpoint        string `yaml:"minio_endpoint"`
+	MinIOAccessKey       string `yaml:"minio_access_key"`
+	MinIOSecretKey       string `yaml:"minio_secret_key"`
+	MinIOUseSSL          bool   `yaml:"minio_use_ssl"`
+	ListenAddr           string `yaml:"listen_addr"`
+	ScrapeInterval       string `yaml:"scrape_interval"`
+	MetricsPath          string `yaml:"metrics_path"`
+	BucketPattern        string `yaml:"bucket_pattern"`
+	BucketExcludePattern string `yaml:"bucket_exclude_pattern"`
+}
 
 // Config holds the application configuration
 type Config struct {
@@ -328,11 +342,27 @@ func (m *MinIOClient) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// loadConfig loads configuration from command line arguments first, then environment variables
+// loadConfigFromFile loads configuration from a YAML file
+func loadConfigFromFile(filename string) (*ConfigFile, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %w", filename, err)
+	}
+
+	var config ConfigFile
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file %s: %w", filename, err)
+	}
+
+	return &config, nil
+}
+
+// loadConfig loads configuration with priority: config file > command line arguments > environment variables > default values
 func loadConfig() Config {
 	// Define command line flags
 	var (
 		help                 = flag.Bool("help", false, "Show help information")
+		configFile           = flag.String("config-file", "config.yaml", "Path to configuration file (YAML)")
 		minioEndpoint        = flag.String("minio-endpoint", "", "MinIO server endpoint (e.g., localhost:9000)")
 		minioAccessKey       = flag.String("minio-access-key", "", "MinIO access key")
 		minioSecretKey       = flag.String("minio-secret-key", "", "MinIO secret key")
@@ -356,34 +386,68 @@ func loadConfig() Config {
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
 		fmt.Println("")
-		fmt.Println("Environment Variables (used if flags not provided):")
+		fmt.Println("Configuration Priority (highest to lowest):")
+		fmt.Println("  1. Configuration file (YAML)")
+		fmt.Println("  2. Command line arguments")
+		fmt.Println("  3. Environment variables")
+		fmt.Println("  4. Default values")
+		fmt.Println("")
+		fmt.Println("Environment Variables (used if not specified elsewhere):")
 		fmt.Println("  MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_USE_SSL")
 		fmt.Println("  LISTEN_ADDR, SCRAPE_INTERVAL, METRICS_PATH, BUCKET_PATTERN, BUCKET_EXCLUDE_PATTERN")
 		fmt.Println("")
 		fmt.Println("Examples:")
+		fmt.Println("  minio-prometheus-sd -config-file=myconfig.yaml")
 		fmt.Println("  minio-prometheus-sd -minio-endpoint=minio:9000 -minio-access-key=mykey")
 		fmt.Println("  minio-prometheus-sd -listen-addr=:9090 -bucket-pattern=prod-*")
 		os.Exit(0)
 	}
 
-	// Helper function to get value with priority: command line > environment variable > default
-	getValue := func(cmdValue *string, envKey, defaultValue string) string {
+	// Load configuration from file if it exists
+	var fileConfig *ConfigFile
+	if *configFile != "" {
+		if config, err := loadConfigFromFile(*configFile); err == nil {
+			fileConfig = config
+			logrus.Infof("Configuration loaded from file: %s", *configFile)
+		} else {
+			logrus.Warnf("Failed to load config file %s: %v", *configFile, err)
+		}
+	}
+
+	// Create a default ConfigFile if none was loaded
+	if fileConfig == nil {
+		fileConfig = &ConfigFile{}
+	}
+
+	// Helper function to get value with priority: config file > command line > environment variable > default
+	getValue := func(fileValue *string, cmdValue *string, envKey, defaultValue string) string {
+		if fileValue != nil && *fileValue != "" {
+			return *fileValue
+		}
 		if *cmdValue != "" {
 			return *cmdValue
 		}
 		return getEnv(envKey, defaultValue)
 	}
 
-	// Helper function to get boolean value with priority: command line > environment variable > default
-	getBoolValue := func(cmdValue *bool, envKey string, defaultValue bool) bool {
+	// Helper function to get boolean value with priority: config file > command line > environment variable > default
+	getBoolValue := func(fileValue *bool, cmdValue *bool, envKey string, defaultValue bool) bool {
+		if fileValue != nil && *fileValue != defaultValue {
+			return *fileValue
+		}
 		if *cmdValue != defaultValue {
 			return *cmdValue
 		}
 		return getEnvAsBool(envKey, defaultValue)
 	}
 
-	// Helper function to get duration value with priority: command line > environment variable > default
-	getDurationValue := func(cmdValue *string, envKey string, defaultValue time.Duration) time.Duration {
+	// Helper function to get duration value with priority: config file > command line > environment variable > default
+	getDurationValue := func(fileValue *string, cmdValue *string, envKey string, defaultValue time.Duration) time.Duration {
+		if fileValue != nil && *fileValue != "" {
+			if duration, err := time.ParseDuration(*fileValue); err == nil {
+				return duration
+			}
+		}
 		if *cmdValue != "" {
 			if duration, err := time.ParseDuration(*cmdValue); err == nil {
 				return duration
@@ -393,15 +457,15 @@ func loadConfig() Config {
 	}
 
 	config := Config{
-		MinIOEndpoint:        getValue(minioEndpoint, "MINIO_ENDPOINT", "localhost:9000"),
-		MinIOAccessKey:       getValue(minioAccessKey, "MINIO_ACCESS_KEY", "minioadmin"),
-		MinIOSecretKey:       getValue(minioSecretKey, "MINIO_SECRET_KEY", "minioadmin"),
-		MinIOUseSSL:          getBoolValue(minioUseSSL, "MINIO_USE_SSL", false),
-		ListenAddr:           getValue(listenAddr, "LISTEN_ADDR", ":8080"),
-		ScrapeInterval:       getDurationValue(scrapeInterval, "SCRAPE_INTERVAL", 15*time.Second),
-		MetricsPath:          getValue(metricsPath, "METRICS_PATH", "/minio/metrics/v3"),
-		BucketPattern:        getValue(bucketPattern, "BUCKET_PATTERN", "*"),
-		BucketExcludePattern: getValue(bucketExcludePattern, "BUCKET_EXCLUDE_PATTERN", ""),
+		MinIOEndpoint:        getValue(&fileConfig.MinIOEndpoint, minioEndpoint, "MINIO_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey:       getValue(&fileConfig.MinIOAccessKey, minioAccessKey, "MINIO_ACCESS_KEY", "minioadmin"),
+		MinIOSecretKey:       getValue(&fileConfig.MinIOSecretKey, minioSecretKey, "MINIO_SECRET_KEY", "minioadmin"),
+		MinIOUseSSL:          getBoolValue(&fileConfig.MinIOUseSSL, minioUseSSL, "MINIO_USE_SSL", false),
+		ListenAddr:           getValue(&fileConfig.ListenAddr, listenAddr, "LISTEN_ADDR", ":8080"),
+		ScrapeInterval:       getDurationValue(&fileConfig.ScrapeInterval, scrapeInterval, "SCRAPE_INTERVAL", 15*time.Second),
+		MetricsPath:          getValue(&fileConfig.MetricsPath, metricsPath, "METRICS_PATH", "/minio/metrics/v3"),
+		BucketPattern:        getValue(&fileConfig.BucketPattern, bucketPattern, "BUCKET_PATTERN", "*"),
+		BucketExcludePattern: getValue(&fileConfig.BucketExcludePattern, bucketExcludePattern, "BUCKET_EXCLUDE_PATTERN", ""),
 		DefaultScrapeConfig: ScrapeConfig{
 			MetricsPath:    "/minio/metrics/v3",
 			ScrapeInterval: "15s",

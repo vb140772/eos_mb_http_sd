@@ -1,0 +1,17 @@
+# MinIO Prometheus Service Discovery Configuration
+# This file contains all configuration options for the service
+
+# MinIO Connection Settings
+minio_endpoint: "minio:9000"
+minio_access_key: "minioadmin"
+minio_secret_key: "minioadmin"
+minio_use_ssl: false
+
+# Service Settings
+listen_addr: ":8080"
+scrape_interval: "15s"
+metrics_path: "/minio/metrics/v3"
+
+# Bucket Filtering
+bucket_pattern: "*"
+bucket_exclude_pattern: ""
