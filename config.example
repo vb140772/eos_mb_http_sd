@@ -1,0 +1,25 @@
+# MinIO Configuration
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_USE_SSL=false
+
+# Service Configuration
+LISTEN_ADDR=:8080
+SCRAPE_INTERVAL=15s
+
+# MinIO v3 Metrics Authentication (REQUIRED)
+
+
+# Bucket Wildcard Patterns
+BUCKET_PATTERN=*                    # Include all buckets (default)
+# BUCKET_PATTERN=prod-*            # Include only buckets starting with "prod-"
+# BUCKET_PATTERN=*data*            # Include buckets containing "data"
+# BUCKET_PATTERN=test-*            # Include only test buckets
+
+# BUCKET_EXCLUDE_PATTERN=          # Exclude no buckets (default)
+# BUCKET_EXCLUDE_PATTERN=temp-*    # Exclude buckets starting with "temp-"
+# BUCKET_EXCLUDE_PATTERN=*backup*  # Exclude buckets containing "backup"
+
+# Optional: Custom metrics path (defaults to /minio/metrics/v3)
+# METRICS_PATH=/minio/metrics/v3

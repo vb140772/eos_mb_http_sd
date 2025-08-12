@@ -1,0 +1,47 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # MinIO Server Metrics
+  - job_name: 'minio-server'
+    http_sd_configs:
+      - url: 'http://minio-prometheus-sd:8080/sd?job=minio-server'
+        refresh_interval: 15s
+    scheme: http
+    bearer_token: 'eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJwcm9tZXRoZXVzIiwic3ViIjoibWluaW9hZG1pbiIsImV4cCI6NDkwODU1MDc0OH0.NQcPlEPdc4-Ubc8vYjzX6KpwdlhPwshQUhfjmEUcZtaIBLMNgnVSnDq_hg83RlhQsXpOHznrVJvp__O-DGQtLQ'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__metrics_path__]
+        target_label: __metrics_path__
+      - source_labels: [__scheme__]
+        target_label: __scheme__
+
+  # MinIO Bucket Metrics - All buckets in a single job
+  - job_name: 'minio-buckets'
+    http_sd_configs:
+      - url: 'http://minio-prometheus-sd:8080/sd?job=minio-buckets'
+        refresh_interval: 15s
+    scheme: http
+    bearer_token: 'eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJwcm9tZXRoZXVzIiwic3ViIjoibWluaW9hZG1pbiIsImV4cCI6NDkwODU1MDc0OH0.NQcPlEPdc4-Ubc8vYjzX6KpwdlhPwshQUhfjmEUcZtaIBLMNgnVSnDq_hg83RlhQsXpOHznrVJvp__O-DGQtLQ'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__metrics_path__]
+        target_label: __metrics_path__
+      - source_labels: [__scheme__]
+        target_label: __scheme__
+      - source_labels: [bucket]
+        target_label: bucket
+      - source_labels: [bucket_creation]
+        target_label: bucket_creation
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
