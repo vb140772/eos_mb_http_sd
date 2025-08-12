@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -109,6 +110,93 @@ func (m *MinIOClient) ListBuckets(ctx context.Context) ([]minio.BucketInfo, erro
 	return buckets, nil
 }
 
+// GetClusterNodes retrieves all nodes in the MinIO cluster using admin API
+func (m *MinIOClient) GetClusterNodes(ctx context.Context) ([]string, error) {
+	// Try to get cluster info using admin API
+	// First, try to get cluster info from the endpoint
+	url := fmt.Sprintf("%s://%s/minio/admin/v3/info", m.getScheme(), m.config.MinIOEndpoint)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add MinIO credentials
+	req.SetBasicAuth(m.config.MinIOAccessKey, m.config.MinIOSecretKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// If admin API fails, fall back to using the configured endpoint
+		// This handles cases where the cluster is still starting or admin API is not available
+		logrus.Warnf("Admin API returned status %d, falling back to configured endpoint", resp.StatusCode)
+		return []string{m.config.MinIOEndpoint}, nil
+	}
+
+	var clusterInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&clusterInfo); err != nil {
+		logrus.Warnf("Failed to decode cluster info, falling back to configured endpoint: %v", err)
+		return []string{m.config.MinIOEndpoint}, nil
+	}
+
+	// Extract nodes from cluster info
+	var nodes []string
+	if servers, ok := clusterInfo["servers"].([]interface{}); ok {
+		for _, server := range servers {
+			if serverMap, ok := server.(map[string]interface{}); ok {
+				if endpoint, ok := serverMap["endpoint"].(string); ok {
+					// Convert internal endpoint to external accessible endpoint
+					// For Docker setup, we need to map internal names to external ports
+					externalEndpoint := m.mapInternalToExternalEndpoint(endpoint)
+					nodes = append(nodes, externalEndpoint)
+				}
+			}
+		}
+	}
+
+	// If no nodes found, fall back to configured endpoint
+	if len(nodes) == 0 {
+		logrus.Warnf("No nodes found in cluster info, falling back to configured endpoint")
+		return []string{m.config.MinIOEndpoint}, nil
+	}
+
+	logrus.Infof("Discovered %d cluster nodes: %v", len(nodes), nodes)
+	return nodes, nil
+}
+
+// mapInternalToExternalEndpoint maps internal MinIO endpoints to external accessible endpoints
+func (m *MinIOClient) mapInternalToExternalEndpoint(internalEndpoint string) string {
+	// For Docker setup, map internal service names to external ports
+	// This is a simplified mapping - in production you might want more sophisticated logic
+
+	// Extract hostname from internal endpoint
+	host, _, err := net.SplitHostPort(internalEndpoint)
+	if err != nil {
+		// If no port, assume the whole string is the hostname
+		host = internalEndpoint
+	}
+
+	// Map internal hostnames to external ports for Docker setup
+	switch host {
+	case "minio1":
+		return fmt.Sprintf("localhost:9001")
+	case "minio2":
+		return fmt.Sprintf("localhost:9003")
+	case "minio3":
+		return fmt.Sprintf("localhost:9005")
+	case "minio4":
+		return fmt.Sprintf("localhost:9007")
+	default:
+		// For unknown hosts, return the original endpoint
+		return internalEndpoint
+	}
+}
+
 // GenerateScrapeConfigs generates Prometheus scrape configurations for all buckets
 func (m *MinIOClient) GenerateScrapeConfigs(ctx context.Context) ([]ScrapeConfig, error) {
 	// Note: We don't need to list buckets here anymore since we always generate the minio-buckets job
@@ -117,11 +205,12 @@ func (m *MinIOClient) GenerateScrapeConfigs(ctx context.Context) ([]ScrapeConfig
 	var configs []ScrapeConfig
 
 	// Generate config for MinIO server metrics (global)
+	// Note: The actual targets will be dynamically discovered in handleServiceDiscovery
 	serverConfig := m.config.DefaultScrapeConfig
 	serverConfig.JobName = "minio-server"
 	serverConfig.StaticConfigs = []StaticConfig{
 		{
-			Targets: []string{m.config.MinIOEndpoint},
+			Targets: []string{m.config.MinIOEndpoint}, // Placeholder - will be replaced dynamically
 			Labels: map[string]string{
 				"__metrics_path__": "/minio/metrics/v3",
 				"__scheme__":       m.getScheme(),
@@ -245,6 +334,13 @@ func (m *MinIOClient) handleServiceDiscovery(w http.ResponseWriter, r *http.Requ
 
 	// Special handling for minio-buckets job - return all buckets
 	if jobName == "minio-buckets" {
+		// Get cluster nodes for better monitoring
+		nodes, err := m.GetClusterNodes(ctx)
+		if err != nil {
+			logrus.Warnf("Failed to get cluster nodes, falling back to configured endpoint: %v", err)
+			nodes = []string{m.config.MinIOEndpoint}
+		}
+
 		buckets, err := m.ListBuckets(ctx)
 		if err != nil {
 			logrus.Warnf("Failed to list buckets (cluster may still be starting): %v", err)
@@ -257,21 +353,45 @@ func (m *MinIOClient) handleServiceDiscovery(w http.ResponseWriter, r *http.Requ
 			logrus.Infof("After filtering, %d buckets remain", len(filteredBuckets))
 
 			for _, bucket := range filteredBuckets {
-				response = append(response, ServiceDiscoveryResponse{
-					Targets: []string{m.config.MinIOEndpoint},
-					Labels: map[string]string{
-						"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
-						"__scheme__":         m.getScheme(),
-						"instance":           m.config.MinIOEndpoint,
-						"job":                "minio-buckets",
-						"sd_bucket":          bucket.Name,
-						"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
-					},
-				})
+				// Create a target for each node for each bucket
+				for _, node := range nodes {
+					response = append(response, ServiceDiscoveryResponse{
+						Targets: []string{node},
+						Labels: map[string]string{
+							"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
+							"__scheme__":         m.getScheme(),
+							"instance":           node,
+							"job":                "minio-buckets",
+							"sd_bucket":          bucket.Name,
+							"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
+							"sd_node":            node,
+						},
+					})
+				}
 			}
 		}
+	} else if jobName == "minio-server" {
+		// For minio-server job, get cluster nodes and create targets for each
+		nodes, err := m.GetClusterNodes(ctx)
+		if err != nil {
+			logrus.Warnf("Failed to get cluster nodes, falling back to configured endpoint: %v", err)
+			nodes = []string{m.config.MinIOEndpoint}
+		}
+
+		for _, node := range nodes {
+			response = append(response, ServiceDiscoveryResponse{
+				Targets: []string{node},
+				Labels: map[string]string{
+					"__metrics_path__": "/minio/metrics/v3",
+					"__scheme__":       m.getScheme(),
+					"instance":         node,
+					"job":              "minio-server",
+					"sd_node":          node,
+				},
+			})
+		}
 	} else {
-		// For other jobs (like minio-server), use the standard approach
+		// For other jobs, use the standard approach
 		for _, staticConfig := range targetConfig.StaticConfigs {
 			for _, target := range staticConfig.Targets {
 				// Copy the labels
