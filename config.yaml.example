@@ -2,7 +2,9 @@
 # Copy this file to config.yaml and edit with your settings
 
 # MinIO Connection Settings
-minio_endpoint: "minio:9000"
+# For single node: use "localhost:9000" or "minio:9000"
+# For 4-node distributed cluster: use "minio-nginx:80" (Docker network) or individual nodes
+minio_endpoint: "minio-nginx:80"
 minio_access_key: "minioadmin"
 minio_secret_key: "minioadmin"
 minio_use_ssl: false
@@ -18,17 +20,30 @@ bucket_exclude_pattern: ""
 
 # Examples for different environments:
 # 
-# Development:
+# Development (Single Node):
 # minio_endpoint: "localhost:9000"
 # bucket_pattern: "dev-*"
 # 
-# Production:
-# minio_endpoint: "minio-prod.company.com:9000"
+# Development (4-Node Distributed Cluster):
+# minio_endpoint: "minio-nginx:80"  # Docker network load balancer
+# bucket_pattern: "dev-*"
+# 
+# Production (4-Node Distributed Cluster):
+# minio_endpoint: "minio-prod.company.com:9000"  # External load balancer
 # minio_use_ssl: true
 # bucket_pattern: "prod-*"
 # bucket_exclude_pattern: "*backup*,*archive*"
 # 
-# Staging:
-# minio_endpoint: "minio-staging.company.com:9000"
+# Staging (4-Node Distributed Cluster):
+# minio_endpoint: "minio-staging.company.com:9000"  # External load balancer
 # bucket_pattern: "staging-*"
 # bucket_exclude_pattern: "*temp*"
+# 
+# Direct Node Access (for debugging):
+# minio_endpoint: "minio1:9000"  # Node 1 (Docker network)
+# minio_endpoint: "minio2:9000"  # Node 2 (Docker network)
+# minio_endpoint: "minio3:9000"  # Node 3 (Docker network)
+# minio_endpoint: "minio4:9000"  # Node 4 (Docker network)
+# 
+# Console Access:
+# MinIO Console: "http://localhost:9090"  # Load balanced console (external)

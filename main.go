@@ -111,10 +111,8 @@ func (m *MinIOClient) ListBuckets(ctx context.Context) ([]minio.BucketInfo, erro
 
 // GenerateScrapeConfigs generates Prometheus scrape configurations for all buckets
 func (m *MinIOClient) GenerateScrapeConfigs(ctx context.Context) ([]ScrapeConfig, error) {
-	buckets, err := m.ListBuckets(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// Note: We don't need to list buckets here anymore since we always generate the minio-buckets job
+	// Bucket listing is done dynamically in handleServiceDiscovery when the job is requested
 
 	var configs []ScrapeConfig
 
@@ -135,23 +133,22 @@ func (m *MinIOClient) GenerateScrapeConfigs(ctx context.Context) ([]ScrapeConfig
 	configs = append(configs, serverConfig)
 
 	// Generate config for all buckets in a single job
-	if len(buckets) > 0 {
-		bucketConfig := m.config.DefaultScrapeConfig
-		bucketConfig.JobName = "minio-buckets"
-		bucketConfig.StaticConfigs = []StaticConfig{
-			{
-				Targets: []string{m.config.MinIOEndpoint},
-				Labels: map[string]string{
-					"__metrics_path__": "/minio/metrics/v3/bucket/api",
-					"__scheme__":       m.getScheme(),
-					"instance":         m.config.MinIOEndpoint,
-					"job":              "minio-buckets",
-					"bucket_pattern":   "*",
-				},
+	// Always generate this job, even if no buckets exist yet
+	bucketConfig := m.config.DefaultScrapeConfig
+	bucketConfig.JobName = "minio-buckets"
+	bucketConfig.StaticConfigs = []StaticConfig{
+		{
+			Targets: []string{m.config.MinIOEndpoint},
+			Labels: map[string]string{
+				"__metrics_path__": "/minio/metrics/v3/bucket/api",
+				"__scheme__":       m.getScheme(),
+				"instance":         m.config.MinIOEndpoint,
+				"job":              "minio-buckets",
+				"bucket_pattern":   "*",
 			},
-		}
-		configs = append(configs, bucketConfig)
+		},
 	}
+	configs = append(configs, bucketConfig)
 
 	return configs, nil
 }
@@ -250,28 +247,28 @@ func (m *MinIOClient) handleServiceDiscovery(w http.ResponseWriter, r *http.Requ
 	if jobName == "minio-buckets" {
 		buckets, err := m.ListBuckets(ctx)
 		if err != nil {
-			logrus.Errorf("Failed to list buckets: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
+			logrus.Warnf("Failed to list buckets (cluster may still be starting): %v", err)
+			// Don't return error, just return empty response for now
+			// This allows Prometheus to discover the job even when cluster is starting
+		} else {
+			// Apply wildcard filtering
+			filteredBuckets := m.filterBuckets(buckets)
+			logrus.Infof("Found %d buckets, applying pattern '%s' and exclude '%s'", len(buckets), m.config.BucketPattern, m.config.BucketExcludePattern)
+			logrus.Infof("After filtering, %d buckets remain", len(filteredBuckets))
 
-		// Apply wildcard filtering
-		filteredBuckets := m.filterBuckets(buckets)
-		logrus.Infof("Found %d buckets, applying pattern '%s' and exclude '%s'", len(buckets), m.config.BucketPattern, m.config.BucketExcludePattern)
-		logrus.Infof("After filtering, %d buckets remain", len(filteredBuckets))
-
-		for _, bucket := range filteredBuckets {
-			response = append(response, ServiceDiscoveryResponse{
-				Targets: []string{m.config.MinIOEndpoint},
-				Labels: map[string]string{
-					"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
-					"__scheme__":         m.getScheme(),
-					"instance":           m.config.MinIOEndpoint,
-					"job":                "minio-buckets",
-					"sd_bucket":          bucket.Name,
-					"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
-				},
-			})
+			for _, bucket := range filteredBuckets {
+				response = append(response, ServiceDiscoveryResponse{
+					Targets: []string{m.config.MinIOEndpoint},
+					Labels: map[string]string{
+						"__metrics_path__":   fmt.Sprintf("/minio/metrics/v3/bucket/api/%s", bucket.Name),
+						"__scheme__":         m.getScheme(),
+						"instance":           m.config.MinIOEndpoint,
+						"job":                "minio-buckets",
+						"sd_bucket":          bucket.Name,
+						"sd_bucket_creation": bucket.CreationDate.Format(time.RFC3339),
+					},
+				})
+			}
 		}
 	} else {
 		// For other jobs (like minio-server), use the standard approach

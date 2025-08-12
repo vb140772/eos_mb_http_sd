@@ -2,7 +2,8 @@
 # This file contains all configuration options for the service
 
 # MinIO Connection Settings
-minio_endpoint: "minio:9000"
+# Use the nginx load balancer service name within Docker network
+minio_endpoint: "minio-nginx:80"
 minio_access_key: "minioadmin"
 minio_secret_key: "minioadmin"
 minio_use_ssl: false

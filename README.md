@@ -602,7 +602,9 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 
 ### **Docker Compose**
 
-#### **Complete Stack**
+The service supports both single-node and multi-node MinIO deployments.
+
+#### **Option 1: Single Node MinIO (Simple Setup)**
 ```yaml
 version: '3.8'
 
@@ -623,32 +625,9 @@ services:
     build: .
     ports:
       - "8080:8080"
-    # Option 1: Using configuration file (Recommended)
     volumes:
       - ./config.yaml:/app/config.yaml
     command: -config-file=/app/config.yaml
-
-    # Option 2: Using command line arguments
-    # command: >
-    #   -minio-endpoint=minio:9000
-    #   -minio-access-key=minioadmin
-    #   -minio-secret-key=minioadmin
-    #   -minio-use-ssl=false
-    #   -listen-addr=:8080
-    #   -scrape-interval=15s
-    #   -bucket-pattern=*
-    #   -bucket-exclude-pattern=
-
-    # Option 3: Using environment variables (Legacy)
-    # environment:
-    #   - MINIO_ENDPOINT=minio:9000
-    #   - MINIO_ACCESS_KEY=minioadmin
-    #   - MINIO_SECRET_KEY=minioadmin
-    #   - MINIO_USE_SSL=false
-    #   - LISTEN_ADDR=:8080
-    #   - SCRAPE_INTERVAL=15s
-    #   - BUCKET_PATTERN=*
-    #   - BUCKET_EXCLUDE_PATTERN=
     depends_on:
       minio:
         condition: service_started
@@ -672,6 +651,165 @@ volumes:
   minio_data:
   prometheus_data:
 ```
+
+#### **Option 2: 4-Node MinIO Distributed Cluster (Production Ready)**
+```yaml
+version: '3.8'
+
+services:
+  # MinIO Cluster Nodes
+  minio1:
+    image: minio/minio:latest
+    hostname: minio1
+    ports:
+      - "9001:9000"
+      - "9002:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /mnt/disk1 /mnt/disk2 /mnt/disk3 /mnt/disk4 --console-address ":9001" --address ":9000"
+    volumes:
+      - minio1_disk1:/mnt/disk1
+      - minio1_disk2:/mnt/disk2
+      - minio1_disk3:/mnt/disk3
+      - minio1_disk4:/mnt/disk4
+    networks:
+      - minio_cluster
+
+  minio2:
+    image: minio/minio:latest
+    hostname: minio2
+    ports:
+      - "9003:9000"
+      - "9004:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /mnt/disk1 /mnt/disk2 /mnt/disk3 /mnt/disk4 --console-address ":9001" --address ":9000"
+    volumes:
+      - minio2_disk1:/mnt/disk1
+      - minio2_disk2:/mnt/disk2
+      - minio2_disk3:/mnt/disk3
+      - minio2_disk4:/mnt/disk4
+    networks:
+      - minio_cluster
+
+  minio3:
+    image: minio/minio:latest
+    hostname: minio3
+    ports:
+      - "9005:9000"
+      - "9006:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /mnt/disk1 /mnt/disk2 /mnt/disk3 /mnt/disk4 --console-address ":9001" --address ":9000"
+    volumes:
+      - minio3_disk1:/mnt/disk1
+      - minio3_disk2:/mnt/disk2
+      - minio3_disk3:/mnt/disk3
+      - minio3_disk4:/mnt/disk4
+    networks:
+      - minio_cluster
+
+  minio4:
+    image: minio/minio:latest
+    hostname: minio4
+    ports:
+      - "9007:9000"
+      - "9008:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /mnt/disk1 /mnt/disk2 /mnt/disk3 /mnt/disk4 --console-address ":9001" --address ":9000"
+    volumes:
+      - minio4_disk1:/mnt/disk1
+      - minio4_disk2:/mnt/disk2
+      - minio4_disk3:/mnt/disk3
+      - minio4_disk4:/mnt/disk4
+    networks:
+      - minio_cluster
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "9000:80"   # MinIO API
+      - "9090:81"   # MinIO Console (changed from 9001 to avoid conflict)
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - minio1
+      - minio2
+      - minio3
+      - minio4
+    networks:
+      - minio_cluster
+
+  minio-prometheus-sd:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    command: >
+      ./minio-prometheus-sd
+      -config-file=/app/config.yaml
+    networks:
+      - minio_cluster
+    depends_on:
+      minio1:
+        condition: service_healthy
+      minio2:
+        condition: service_healthy
+      minio3:
+        condition: service_healthy
+      minio4:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - minio_cluster
+
+networks:
+  minio_cluster:
+    driver: bridge
+
+volumes:
+  # MinIO Node drives (one per node)
+  minio1_drive1:
+  minio2_drive1:
+  minio3_drive1:
+  minio4_drive1:
+  prometheus_data:
+```
+
+**Distributed Cluster Benefits:**
+- ✅ **High Availability** - Service continues if nodes fail
+- ✅ **Data Redundancy** - Data replicated across nodes and drives
+- ✅ **Load Distribution** - Requests distributed across cluster
+- ✅ **Scalability** - Easy to add more nodes and drives
+- ✅ **Production Ready** - Enterprise-grade reliability
+- ✅ **Erasure Coding** - Data protection with configurable parity
+
+**Access Points:**
+- **MinIO API**: `http://localhost:9000` (load balanced across cluster)
+- **MinIO Console**: `http://localhost:9090` (load balanced across cluster)
+- **Individual Nodes**: `localhost:9001`, `9003`, `9005`, `9007` (for debugging)
+- **Docker Network**: `minio-nginx:80` (for internal services)
 
 ### **Kubernetes Deployment**
 
