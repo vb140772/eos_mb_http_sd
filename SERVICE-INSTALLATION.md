@@ -22,14 +22,37 @@ The service will run the `eos_mb_http_sd` binary as a background service that au
 
 ## Quick Installation
 
-### 1. Build the Binary
+### 1. Download the Binary
 
-First, ensure you have the binary built for your platform:
+Download the pre-built binary from the GitHub releases page:
 
 ```bash
-# Build for Linux
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o eos_mb_http_sd main.go
+# Download the latest release binary for Linux x86_64
+wget https://github.com/your-username/eos_mb_http_sd/releases/latest/download/eos_mb_http_sd-linux-amd64
+
+# Rename to the expected binary name
+mv eos_mb_http_sd-linux-amd64 eos_mb_http_sd
+
+# Make it executable
+chmod +x eos_mb_http_sd
 ```
+
+**Alternative download methods:**
+
+```bash
+# Using curl
+curl -L -o eos_mb_http_sd https://github.com/your-username/eos_mb_http_sd/releases/latest/download/eos_mb_http_sd-linux-amd64
+
+# Or download a specific version
+wget https://github.com/your-username/eos_mb_http_sd/releases/download/v1.0.0/eos_mb_http_sd-linux-amd64
+```
+
+**Available architectures:**
+- Linux x86_64: `eos_mb_http_sd-linux-amd64`
+- Linux ARM64: `eos_mb_http_sd-linux-arm64`
+- Linux ARM: `eos_mb_http_sd-linux-arm`
+- macOS x86_64: `eos_mb_http_sd-darwin-amd64`
+- macOS ARM64: `eos_mb_http_sd-darwin-arm64`
 
 ### 2. Run Installation Script
 
@@ -46,7 +69,7 @@ The script will:
 - Install the binary to `/opt/eos-mb-http-sd/`
 - Create log directory at `/var/log/eos-mb-http-sd/`
 - Install and enable the systemd service
-- Set proper permissions and security settings
+- Set proper permissions
 
 ## Manual Installation
 
@@ -187,15 +210,7 @@ sudo journalctl -u eos-mb-http-sd -b
 sudo journalctl -u eos-mb-http-sd --since "2024-01-01 00:00:00"
 ```
 
-## Security Features
 
-The service includes several security features:
-
-- **Dedicated user**: Runs as non-root user `eos-mb-http-sd`
-- **File system protection**: `ProtectSystem=strict` and `ProtectHome=true`
-- **No privilege escalation**: `NoNewPrivileges=true`
-- **Isolated temporary files**: `PrivateTmp=true`
-- **Limited file access**: Only specific paths are writable
 
 ## Troubleshooting
 

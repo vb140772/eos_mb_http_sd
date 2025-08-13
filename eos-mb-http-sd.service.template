@@ -6,10 +6,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=eos-mb-http-sd
-Group=eos-mb-http-sd
-WorkingDirectory=/opt/eos-mb-http-sd
-ExecStart=/opt/eos-mb-http-sd/eos_mb_http_sd
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/eos_mb_http_sd
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
@@ -39,17 +38,7 @@ Environment="BUCKET_EXCLUDE_PATTERN="
 # Set to: debug, info, warn, error, fatal, panic
 Environment="LOG_LEVEL=info"
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/eos-mb-http-sd
-ReadWritePaths=/var/log/eos-mb-http-sd
 
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
 
 [Install]
 WantedBy=multi-user.target
