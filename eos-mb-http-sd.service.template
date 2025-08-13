@@ -1,0 +1,55 @@
+[Unit]
+Description=EOS MinIO Prometheus Service Discovery
+Documentation=https://github.com/your-username/eos_mb_http_sd
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=eos-mb-http-sd
+Group=eos-mb-http-sd
+WorkingDirectory=/opt/eos-mb-http-sd
+ExecStart=/opt/eos-mb-http-sd/eos_mb_http_sd
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=eos-mb-http-sd
+
+# Environment variables for MinIO connection
+# Update these values for your MinIO server
+Environment="MINIO_ENDPOINT=YOUR_MINIO_SERVER:9000"
+Environment="MINIO_ACCESS_KEY=YOUR_ACCESS_KEY"
+Environment="MINIO_SECRET_KEY=YOUR_SECRET_KEY"
+Environment="MINIO_USE_SSL=false"
+
+# Environment variables for service configuration
+# Update these values as needed
+Environment="LISTEN_ADDR=:8080"
+Environment="SCRAPE_INTERVAL=15s"
+Environment="METRICS_PATH=/minio/metrics/v3"
+
+# Environment variables for bucket filtering
+# Update these patterns for your use case
+Environment="BUCKET_PATTERN=*"
+Environment="BUCKET_EXCLUDE_PATTERN="
+
+# Environment variables for logging
+# Set to: debug, info, warn, error, fatal, panic
+Environment="LOG_LEVEL=info"
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/eos-mb-http-sd
+ReadWritePaths=/var/log/eos-mb-http-sd
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

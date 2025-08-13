@@ -1,0 +1,23 @@
+# EOS MinIO Prometheus Service Discovery - Environment Variables
+# Copy this file to .env and update the values for your environment
+
+# MinIO Connection Settings
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_USE_SSL=false
+
+# Service Settings
+LISTEN_ADDR=:8080
+SCRAPE_INTERVAL=15s
+METRICS_PATH=/minio/metrics/v3
+
+# Bucket Filtering
+BUCKET_PATTERN=*
+BUCKET_EXCLUDE_PATTERN=
+
+# Logging
+LOG_LEVEL=info
+
+# Configuration File (optional)
+CONFIG_FILE=config.yaml
