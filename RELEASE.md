@@ -95,6 +95,25 @@ The workflow is configured in `.github/workflows/release.yml` and includes:
 1. **Permission Denied**: Ensure the workflow has `contents: write` permission
 2. **Build Failures**: Check that all tests pass and dependencies are available
 3. **Release Creation Fails**: Verify the tag format follows `v*` pattern
+4. **GitHub CLI Authentication Errors**: Ensure the repository has proper permissions
+
+### GitHub Token Permissions
+
+If you encounter authentication errors with the GitHub CLI in the workflow:
+
+1. **Check Repository Settings**: Go to Settings → Actions → General
+2. **Workflow Permissions**: Ensure "Read and write permissions" is selected
+3. **Allow GitHub Actions to create and approve pull requests**: This may be needed for some operations
+
+### Debugging Release Issues
+
+The workflow includes extensive debugging output:
+- Artifact listing and verification
+- GitHub CLI authentication status
+- Repository access verification
+- Detailed command execution logging
+
+Check the workflow logs in the Actions tab for detailed error information.
 
 ### Manual Binary Building
 
