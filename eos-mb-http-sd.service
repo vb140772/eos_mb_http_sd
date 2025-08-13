@@ -34,17 +34,5 @@ Environment="BUCKET_EXCLUDE_PATTERN="
 # Environment variables for logging
 Environment="LOG_LEVEL=info"
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/eos-mb-http-sd
-ReadWritePaths=/var/log/eos-mb-http-sd
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
-
 [Install]
 WantedBy=multi-user.target
