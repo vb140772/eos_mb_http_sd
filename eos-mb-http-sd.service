@@ -6,10 +6,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=eos-mb-http-sd
-Group=eos-mb-http-sd
-WorkingDirectory=/opt/eos-mb-http-sd
-ExecStart=/opt/eos-mb-http-sd/eos_mb_http_sd
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/eos_mb_http_sd
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=5
