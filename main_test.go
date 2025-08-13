@@ -2,14 +2,59 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 )
 
 func TestLoadConfig(t *testing.T) {
+	// Create a temporary test config file
+	testConfigContent := `minio_endpoint: "localhost:9000"
+listen_addr: ":8080"
+scrape_interval: "15s"
+minio_access_key: "test"
+minio_secret_key: "test"
+minio_use_ssl: false
+metrics_path: "/minio/metrics/v3"
+bucket_pattern: "*"
+bucket_exclude_pattern: ""
+log_level: "info"`
+
+	// Create temporary file
+	tmpFile, err := os.CreateTemp("", "test_config_*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name()) // Clean up
+
+	// Write test config content
+	if _, err := tmpFile.WriteString(testConfigContent); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	// Save original working directory
+	originalWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+
+	// Change to directory with temp file
+	if err := os.Chdir(os.TempDir()); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+	defer os.Chdir(originalWd) // Restore original directory
+
+	// Rename temp file to config.yaml in temp directory
+	testConfigPath := os.TempDir() + "/config.yaml"
+	if err := os.Rename(tmpFile.Name(), testConfigPath); err != nil {
+		t.Fatalf("Failed to rename temp file: %v", err)
+	}
+	defer os.Remove(testConfigPath) // Clean up
+
 	config := loadConfig()
 
-	// Test default values
+	// Test expected values
 	if config.MinIOEndpoint != "localhost:9000" {
 		t.Errorf("Expected MinIO endpoint 'localhost:9000', got '%s'", config.MinIOEndpoint)
 	}
