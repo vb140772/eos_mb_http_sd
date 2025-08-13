@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/minio/madmin-go/v4"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
@@ -83,6 +83,7 @@ type ServiceDiscoveryResponse struct {
 // MinIOClient wraps the MinIO client
 type MinIOClient struct {
 	client *minio.Client
+	admin  *madmin.AdminClient
 	config Config
 }
 
@@ -96,8 +97,15 @@ func NewMinIOClient(config Config) (*MinIOClient, error) {
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
 
+	// Create admin client for cluster operations
+	admin, err := madmin.New(config.MinIOEndpoint, config.MinIOAccessKey, config.MinIOSecretKey, config.MinIOUseSSL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MinIO admin client: %w", err)
+	}
+
 	return &MinIOClient{
 		client: client,
+		admin:  admin,
 		config: config,
 	}, nil
 }
@@ -113,83 +121,50 @@ func (m *MinIOClient) ListBuckets(ctx context.Context) ([]minio.BucketInfo, erro
 
 // GetClusterNodes retrieves all nodes in the MinIO cluster using admin API
 func (m *MinIOClient) GetClusterNodes(ctx context.Context) ([]string, error) {
-	// Try to get cluster info using admin API
-	url := fmt.Sprintf("%s://%s/minio/admin/v3/info", m.getScheme(), m.config.MinIOEndpoint)
+	logrus.Debugf("Starting cluster node discovery for endpoint: %s", m.config.MinIOEndpoint)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	// Use madmin client to get server info (same as 'mc admin info')
+	logrus.Debugf("Calling madmin.ServerInfo() for endpoint: %s", m.config.MinIOEndpoint)
+	serverInfo, err := m.admin.ServerInfo(ctx)
 	if err != nil {
-		logrus.Warnf("Failed to create request for cluster info: %v", err)
-		return m.getKnownNodes(), nil
+		logrus.Warnf("Failed to get server info via madmin for endpoint %s: %v", m.config.MinIOEndpoint, err)
+		return []string{}, nil
 	}
 
-	// Add MinIO credentials
-	req.SetBasicAuth(m.config.MinIOAccessKey, m.config.MinIOSecretKey)
+	logrus.Debugf("Successfully retrieved server info: mode=%s, deploymentID=%s, region=%s",
+		serverInfo.Mode, serverInfo.DeploymentID, serverInfo.Region)
+	logrus.Debugf("Server info has %d servers", len(serverInfo.Servers))
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		logrus.Warnf("Failed to get cluster info: %v", err)
-		return m.getKnownNodes(), nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		logrus.Warnf("Admin API returned status %d, using known nodes", resp.StatusCode)
-		return m.getKnownNodes(), nil
-	}
-
-	// Read the response body for debugging
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logrus.Warnf("Failed to read response body: %v", err)
-		return m.getKnownNodes(), nil
-	}
-
-	logrus.Debugf("Admin API response: %s", string(bodyBytes))
-
-	var clusterInfo map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &clusterInfo); err != nil {
-		logrus.Warnf("Failed to decode cluster info, using known nodes: %v", err)
-		return m.getKnownNodes(), nil
-	}
-
-	// Extract nodes from cluster info
+	// Extract node endpoints from server info
 	var nodes []string
-	if servers, ok := clusterInfo["servers"].([]interface{}); ok {
-		for _, server := range servers {
-			if serverMap, ok := server.(map[string]interface{}); ok {
-				if endpoint, ok := serverMap["endpoint"].(string); ok {
-					// Use the endpoint directly as returned by admin API
-					// This should be in the format minio1:9000, minio2:9000, etc.
-					nodes = append(nodes, endpoint)
-				}
+	for serverIndex, server := range serverInfo.Servers {
+		logrus.Debugf("Processing server %d: endpoint=%s, state=%s, isLeader=%t, poolNumbers=%v",
+			serverIndex, server.Endpoint, server.State, server.IsLeader, server.PoolNumbers)
+
+		if server.Endpoint != "" {
+			// Ensure the endpoint has a port, default to 9000 if not specified
+			endpoint := server.Endpoint
+			if !strings.Contains(endpoint, ":") {
+				endpoint = endpoint + ":9000"
+				logrus.Debugf("Added default port to endpoint %s -> %s", server.Endpoint, endpoint)
 			}
+			nodes = append(nodes, endpoint)
+			logrus.Debugf("Added node %s from server %d", endpoint, serverIndex)
+		} else {
+			logrus.Debugf("Skipping server %d with empty endpoint", serverIndex)
 		}
 	}
 
-	// If no nodes found in admin API, use known nodes
+	// If no nodes found in server info, return empty list
 	if len(nodes) == 0 {
-		logrus.Warnf("No nodes found in admin API response, using known nodes")
-		return m.getKnownNodes(), nil
+		logrus.Warnf("No nodes found in server info response from endpoint %s", m.config.MinIOEndpoint)
+		logrus.Debugf("Server info servers: %+v", serverInfo.Servers)
+		return []string{}, nil
 	}
 
-	logrus.Infof("Discovered %d cluster nodes from admin API: %v", len(nodes), nodes)
+	logrus.Infof("Successfully discovered %d cluster nodes from admin API endpoint %s: %v", len(nodes), m.config.MinIOEndpoint, nodes)
+	logrus.Debugf("Final node list: %v", nodes)
 	return nodes, nil
-}
-
-// getKnownNodes returns the known MinIO node endpoints for Docker setup
-func (m *MinIOClient) getKnownNodes() []string {
-	// For Docker setup, return the exact node names as shown by 'mc admin info local'
-	// These are the Docker service names that Prometheus can access via Docker network
-	knownNodes := []string{
-		"minio1:9000", // As shown by mc admin info local
-		"minio2:9000", // As shown by mc admin info local
-		"minio3:9000", // As shown by mc admin info local
-		"minio4:9000", // As shown by mc admin info local
-	}
-
-	logrus.Infof("Using known nodes: %v", knownNodes)
-	return knownNodes
 }
 
 // mapInternalToExternalEndpoint maps internal MinIO endpoints to Docker service names
@@ -496,10 +471,20 @@ func loadConfig() Config {
 		metricsPath          = flag.String("metrics-path", "", "Metrics path (e.g., /minio/metrics/v3)")
 		bucketPattern        = flag.String("bucket-pattern", "", "Wildcard pattern for bucket inclusion")
 		bucketExcludePattern = flag.String("bucket-exclude-pattern", "", "Wildcard pattern for bucket exclusion")
+		logLevel             = flag.String("log-level", "info", "Log level (debug, info, warn, error, fatal, panic)")
 	)
 
 	// Parse command line flags
 	flag.Parse()
+
+	// Set log level based on command line flag
+	level, err := logrus.ParseLevel(*logLevel)
+	if err != nil {
+		logrus.Warnf("Invalid log level '%s', using 'info' level. Valid levels: debug, info, warn, error, fatal, panic", *logLevel)
+		level = logrus.InfoLevel
+	}
+	logrus.SetLevel(level)
+	logrus.Infof("Log level set to: %s", level.String())
 
 	// Show help if requested
 	if *help {

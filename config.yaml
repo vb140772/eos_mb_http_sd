@@ -16,3 +16,5 @@ metrics_path: "/minio/metrics/v3"
 # Bucket Filtering
 bucket_pattern: "*"
 bucket_exclude_pattern: ""
+
+log_level: "debug"
