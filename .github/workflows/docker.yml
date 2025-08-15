@@ -83,10 +83,30 @@ jobs:
             type=ref,event=pr
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ inputs.version }},enable={{inputs.version != ''}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
+
+      - name: Debug metadata outputs
+        run: |
+          echo "Debug: meta.outputs.tags = '${{ steps.meta.outputs.tags }}'"
+          echo "Debug: meta.outputs.labels = '${{ steps.meta.outputs.labels }}'"
+          echo "Debug: meta.outputs.json = '${{ steps.meta.outputs.json }}'"
+
+      - name: Add custom version tag if provided
+        id: custom_tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            echo "custom_tag=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "Custom version tag: ${{ inputs.version }}"
+          else
+            echo "custom_tag=" >> $GITHUB_OUTPUT
+            echo "No custom version tag provided"
+          fi
+          
+          echo "Debug: custom_tag output = '${{ steps.custom_tag.outputs.custom_tag }}'"
+          echo "Debug: github.event_name = '${{ github.event_name }}'"
+          echo "Debug: inputs.version = '${{ inputs.version }}'"
 
       - name: Build and push Docker image to GitHub Container Registry
         if: ${{ github.event_name != 'pull_request' && inputs.push_to_registry != false }}
@@ -102,6 +122,20 @@ jobs:
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
+      - name: Build and push custom version tag (if provided)
+        if: ${{ github.event_name != 'pull_request' && inputs.push_to_registry != false && steps.custom_tag.outputs.custom_tag != '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.custom_tag.outputs.custom_tag }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
       - name: Build and push Docker image to GitHub Packages
         if: ${{ github.event_name != 'pull_request' && inputs.push_to_packages != false }}
         uses: docker/build-push-action@v5
@@ -109,7 +143,21 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
-          tags: docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ matrix.tag }}-${{ steps.meta.outputs.version }}
+          tags: docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ matrix.tag }}-latest
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Build and push custom version tag to GitHub Packages (if provided)
+        if: ${{ github.event_name != 'pull_request' && inputs.push_to_packages != false && steps.custom_tag.outputs.custom_tag != '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ steps.custom_tag.outputs.custom_tag }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -123,11 +171,23 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Build and push custom version multi-platform image (if provided)
+        if: ${{ startsWith(github.ref, 'refs/tags/') && steps.custom_tag.outputs.custom_tag != '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ steps.meta.outputs.version }}
-            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.custom_tag.outputs.custom_tag }}
+            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ steps.custom_tag.outputs.custom_tag }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -151,7 +211,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: 'sarif'
           output: 'trivy-results.sarif'
 
@@ -174,6 +234,10 @@ jobs:
             echo "🚀 Docker images published to:"
             echo "   - GitHub Container Registry: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
             echo "   - GitHub Packages: docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd"
+            
+            if [ -n "${{ steps.custom_tag.outputs.custom_tag }}" ]; then
+              echo "   - Custom version tag: ${{ steps.custom_tag.outputs.custom_tag }}"
+            fi
           else
             echo "❌ Some jobs failed:"
             echo "   - Build and Push: ${{ needs.build-and-push.result }}"
