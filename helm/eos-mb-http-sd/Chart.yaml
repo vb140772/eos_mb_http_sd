@@ -1,0 +1,22 @@
+apiVersion: v2
+name: eos-mb-http-sd
+description: A Helm chart for EOS MB HTTP Service Discovery and Prometheus monitoring
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - monitoring
+  - prometheus
+  - service-discovery
+home: https://github.com/vb140772/eos_mb_http_sd
+sources:
+  - https://github.com/vb140772/eos_mb_http_sd
+maintainers:
+  - name: vb140772
+    email: vb140772@example.com
+
+dependencies:
+  - name: prometheus
+    version: 25.0.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled

@@ -1,0 +1,11 @@
+{{- if .Values.eosMbHttpSd.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eos-mb-http-sd.fullname" . }}-config
+  labels:
+    {{- include "eos-mb-http-sd.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+{{ .Values.eosMbHttpSd.config.configYaml | nindent 4 }}
+{{- end }}

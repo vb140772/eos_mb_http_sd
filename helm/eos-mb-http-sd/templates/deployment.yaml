@@ -1,0 +1,73 @@
+{{- if .Values.eosMbHttpSd.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eos-mb-http-sd.fullname" . }}
+  labels:
+    {{- include "eos-mb-http-sd.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.eosMbHttpSd.autoscaling.enabled }}
+  replicas: {{ .Values.eosMbHttpSd.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "eos-mb-http-sd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.eosMbHttpSd.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "eos-mb-http-sd.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "eos-mb-http-sd.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.eosMbHttpSd.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.eosMbHttpSd.image.repository }}:{{ .Values.eosMbHttpSd.image.tag }}"
+          imagePullPolicy: {{ .Values.eosMbHttpSd.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.eosMbHttpSd.service.targetPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.eosMbHttpSd.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+      {{- with .Values.eosMbHttpSd.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.eosMbHttpSd.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.eosMbHttpSd.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "eos-mb-http-sd.fullname" . }}-config
+{{- end }}

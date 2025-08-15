@@ -1,0 +1,21 @@
+{{- if .Values.eosMbHttpSd.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eos-mb-http-sd.fullname" . }}
+  labels:
+    {{- include "eos-mb-http-sd.labels" . | nindent 4 }}
+  {{- with .Values.eosMbHttpSd.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.eosMbHttpSd.service.type }}
+  ports:
+    - port: {{ .Values.eosMbHttpSd.service.port }}
+      targetPort: {{ .Values.eosMbHttpSd.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "eos-mb-http-sd.selectorLabels" . | nindent 4 }}
+{{- end }}

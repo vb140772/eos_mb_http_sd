@@ -1,0 +1,163 @@
+# Default values for eos-mb-http-sd
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# EOS MB HTTP SD Service configuration
+eosMbHttpSd:
+  enabled: true
+  
+  # Image configuration
+  image:
+    repository: ghcr.io/vb140772/eos_mb_http_sd
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations: {}
+  
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: chart-example.local
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+    tls: []
+  
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Pod configuration
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  
+  # Node selector and affinity
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  
+  # Replica count
+  replicaCount: 1
+  
+  # Configuration
+  config:
+    # Add your eos_mb_http_sd specific configuration here
+    # This will be mounted as a configmap
+    configYaml: |
+      # Your configuration here
+      # Example:
+      # minio:
+      #   endpoint: "http://minio-service:9000"
+      #   accessKey: "minioadmin"
+      #   secretKey: "minioadmin"
+  
+  # Service account
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+# Prometheus configuration
+prometheus:
+  enabled: true
+  
+  # Prometheus server configuration
+  server:
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    # Service discovery configuration
+    extraScrapeConfigs: |
+      # MinIO Server Metrics
+      - job_name: 'minio-server'
+        http_sd_configs:
+          - url: 'http://{{ include "eos-mb-http-sd.fullname" . }}:8080/sd?job=minio-server'
+            refresh_interval: 15s
+        scheme: http
+        bearer_token: '{{ .Values.prometheus.bearerToken }}'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+          - source_labels: [__metrics_path__]
+            target_label: __metrics_path__
+          - source_labels: [__scheme__]
+            target_label: __scheme__
+
+      # MinIO Bucket Metrics - All buckets in a single job
+      - job_name: 'minio-buckets'
+        http_sd_configs:
+          - url: 'http://{{ include "eos-mb-http-sd.fullname" . }}:8080/sd?job=minio-buckets'
+            refresh_interval: 15s
+        scheme: http
+        bearer_token: '{{ .Values.prometheus.bearerToken }}'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+          - source_labels: [__metrics_path__]
+            target_label: __metrics_path__
+          - source_labels: [__scheme__]
+            target_label: __scheme__
+          - source_labels: [bucket]
+            target_label: bucket
+          - source_labels: [bucket_creation]
+            target_label: bucket_creation
+
+      # Prometheus self-monitoring
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+    
+    # Storage configuration
+    persistentVolume:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+    
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 9090
+    
+    # Ingress configuration
+    ingress:
+      enabled: false
+      className: ""
+      annotations: {}
+      hosts:
+        - host: prometheus.local
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+      tls: []
+    
+    # Resource limits and requests
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+
+# Bearer token for Prometheus authentication
+bearerToken: "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJwcm9tZXRoZXVzIiwic3ViIjoiYWRtaW4iLCJleHAiOjQ5MDg2MzQ1ODR9.olf5w9-ET1uV-obK9vDGE8Inc0XYJ85c2iP9C_pRxJcysXHRsnb4zGbF9OOrWZfNLRpRyXNRCWfdgOh9J4HizQ"

@@ -1,0 +1,72 @@
+# EOS MB HTTP SD Service specific configuration
+eosMbHttpSd:
+  enabled: true
+  
+  # Image configuration
+  image:
+    repository: ghcr.io/vb140772/eos_mb_http_sd
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  
+  # Configuration
+  config:
+    configYaml: |
+      # MinIO configuration
+      minio:
+        endpoint: "http://minio-service:9000"  # Update this to your MinIO service
+        accessKey: "minioadmin"                # Update with your MinIO credentials
+        secretKey: "minioadmin"
+        useSSL: false
+        insecureSkipVerify: true
+      
+      # HTTP server configuration
+      server:
+        port: 8080
+        host: "0.0.0.0"
+      
+      # Service discovery configuration
+      serviceDiscovery:
+        refreshInterval: 15s
+        timeout: 10s
+      
+      # Logging configuration
+      logging:
+        level: "info"
+        format: "json"
+  
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Pod configuration
+  replicaCount: 1
+  
+  # Health check configuration
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3

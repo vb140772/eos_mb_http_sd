@@ -1,0 +1,59 @@
+{{- if .Values.eosMbHttpSd.ingress.enabled -}}
+{{- $fullName := include "eos-mb-http-sd.fullname" . -}}
+{{- $svcPort := .Values.eosMbHttpSd.service.port -}}
+{{- if and .Values.eosMbHttpSd.ingress.className (not (hasKey .Values.eosMbHttpSd.ingress.annotations "kubernetes.io/ingress.class")) }}
+  {{- $_ := set .Values.eosMbHttpSd.ingress.annotations "kubernetes.io/ingress.class" .Values.eosMbHttpSd.ingress.className}}
+{{- end }}
+{{- if semverCompare ">=1.19-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1
+{{- else if semverCompare ">=1.14-0" .Capabilities.KubeVersion.GitVersion -}}
+apiVersion: networking.k8s.io/v1beta1
+{{- else -}}
+apiVersion: extensions/v1beta1
+{{- end }}
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "eos-mb-http-sd.labels" . | nindent 4 }}
+  {{- with .Values.eosMbHttpSd.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and .Values.eosMbHttpSd.ingress.className (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion) }}
+  ingressClassName: {{ .Values.eosMbHttpSd.ingress.className }}
+  {{- end }}
+  {{- if .Values.eosMbHttpSd.ingress.tls }}
+  tls:
+    {{- range .Values.eosMbHttpSd.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.eosMbHttpSd.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            {{- if and .pathType (semverCompare ">=1.18-0" $.Capabilities.KubeVersion.GitVersion) }}
+            pathType: {{ .pathType }}
+            {{- end }}
+            backend:
+              {{- if semverCompare ">=1.19-0" $.Capabilities.KubeVersion.GitVersion }}
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+              {{- else }}
+              serviceName: {{ $fullName }}
+              servicePort: {{ $svcPort }}
+              {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}
