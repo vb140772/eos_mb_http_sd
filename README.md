@@ -16,6 +16,7 @@ A Go-based service that implements Prometheus HTTP Service Discovery for MinIO (
 10. [Usage Examples](#-usage-examples)
 11. [Troubleshooting](#-troubleshooting)
 12. [Security Considerations](#-security-considerations)
+13. [GitHub Actions](#-github-actions)
 
 ---
 
@@ -573,6 +574,36 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 
 ### **Using Docker**
 
+#### **Option 1: Use Pre-built Images (Recommended)**
+
+We provide pre-built Docker images for both GitHub Container Registry and GitHub Packages:
+
+**GitHub Container Registry (ghcr.io):**
+```bash
+# Pull the latest image
+docker pull ghcr.io/${{ github.repository }}:latest
+
+# Pull a specific version
+docker pull ghcr.io/${{ github.repository }}:v1.0.0
+
+# Run the container
+docker run -p 8080:8080 ghcr.io/${{ github.repository }}:latest
+```
+
+**GitHub Packages (docker.pkg.github.com):**
+```bash
+# Pull the latest image
+docker pull docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:latest
+
+# Pull a specific version
+docker pull docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:v1.0.0
+
+# Run the container
+docker run -p 8080:8080 docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:latest
+```
+
+#### **Option 2: Build from Source**
+
 1. **Build the image**:
    ```bash
    docker build -t minio-prometheus-sd .
@@ -580,18 +611,18 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 
 2. **Run the container**:
    ```bash
-   # Option 1: Using configuration file (Recommended)
+   # Option A: Using configuration file (Recommended)
    docker run -p 8080:8080 -v $(pwd)/config.yaml:/app/config.yaml minio-prometheus-sd \
      -config-file=/app/config.yaml
 
-   # Option 2: Using command line arguments
+   # Option B: Using command line arguments
    docker run -p 8080:8080 minio-prometheus-sd \
      -minio-endpoint="your-minio-server:9000" \
      -minio-access-key="your-access-key" \
      -minio-secret-key="your-secret-key" \
      -minio-use-ssl
 
-   # Option 3: Using environment variables (Legacy)
+   # Option C: Using environment variables (Legacy)
    docker run -p 8080:8080 \
      -e MINIO_ENDPOINT="your-minio-server:9000" \
      -e MINIO_ACCESS_KEY="your-access-key" \
@@ -599,6 +630,14 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
      -e MINIO_USE_SSL="true" \
      minio-prometheus-sd
    ```
+
+#### **Docker Image Features**
+
+- **Multi-platform support**: linux/amd64 and linux/arm64
+- **Optimized size**: Based on Alpine Linux for minimal footprint
+- **Security**: Regular vulnerability scanning with Trivy
+- **Health checks**: Built-in health check endpoint at `/health`
+- **Non-root user**: Runs as non-root for security
 
 ### **Docker Compose**
 
@@ -1059,6 +1098,63 @@ curl "http://localhost:9090/api/v1/targets" | jq
 1. **Limit bucket scope** - Use restrictive patterns
 2. **Monitor memory usage** - Set resource limits in containers
 3. **Regular restarts** - Implement health checks and restarts
+
+---
+
+## 🚀 **GitHub Actions**
+
+This repository includes comprehensive GitHub Actions workflows for automated Docker image building, testing, and publishing.
+
+### **Available Workflows**
+
+#### **1. Docker Build and Publish** (`docker.yml`)
+- **Triggers**: Tags, main/master branches, manual dispatch
+- **Purpose**: Build and publish Docker images to GitHub Container Registry and GitHub Packages
+- **Features**: Multi-platform support, security scanning, automatic tagging
+
+#### **2. Docker Test** (`docker-test.yml`)
+- **Triggers**: Pull requests, manual dispatch
+- **Purpose**: Test Docker images without publishing them
+- **Features**: Build testing, runtime testing, vulnerability scanning, Dockerfile linting
+
+#### **3. Release** (`release.yml`)
+- **Triggers**: Tags, manual dispatch
+- **Purpose**: Create comprehensive GitHub releases with binaries and Docker images
+- **Features**: Multi-platform binaries, Docker integration, security scanning
+
+### **Published Docker Images**
+
+#### **GitHub Container Registry (ghcr.io)**
+```bash
+# Latest version
+docker pull ghcr.io/{username}/{repository}:latest
+
+# Specific version
+docker pull ghcr.io/{username}/{repository}:v1.0.0
+```
+
+#### **GitHub Packages (docker.pkg.github.com)**
+```bash
+# Latest version
+docker pull docker.pkg.github.com/{username}/{repository}/eos-mb-http-sd:latest
+
+# Specific version
+docker pull docker.pkg.github.com/{username}/{repository}/eos-mb-http-sd:v1.0.0
+```
+
+### **Features**
+- **Multi-platform support**: linux/amd64 and linux/arm64
+- **Security scanning**: Automated vulnerability scanning with Trivy
+- **Dual registry publishing**: Both GitHub Container Registry and GitHub Packages
+- **Automatic tagging**: Semantic versioning and latest tags
+- **Build caching**: Optimized builds with GitHub Actions cache
+
+### **Getting Started**
+1. **Push a tag** to trigger automatic Docker image publishing
+2. **Create a pull request** to test Docker builds
+3. **Manual dispatch** for custom builds and testing
+
+For detailed workflow documentation, see [GITHUB-ACTIONS.md](GITHUB-ACTIONS.md).
 
 ---
 
