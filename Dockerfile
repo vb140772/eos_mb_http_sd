@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Install git and ca-certificates (needed for go mod download)
 RUN apk add --no-cache git ca-certificates
@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o minio-prometheus-sd .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o eos_mb_http_sd .
 
 # Final stage
 FROM alpine:latest
@@ -29,14 +29,14 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy binary from builder stage
-COPY --from=builder /app/minio-prometheus-sd .
+COPY --from=builder /app/eos_mb_http_sd .
 
-# Expose port
+# Expose port (adjust if your app uses a different port)
 EXPOSE 8080
 
-# Health check
+# Health check (adjust the endpoint if your app has a different health check)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Run the application
-CMD ["./minio-prometheus-sd"]
+CMD ["./eos_mb_http_sd"]
