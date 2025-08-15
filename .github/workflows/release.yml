@@ -82,94 +82,9 @@ jobs:
             ${{ env.BINARY_NAME }}-${{ matrix.suffix }}
             ${{ env.BINARY_NAME }}-${{ matrix.suffix }}.sha256
 
-  docker-build:
-    name: Build and Push Docker Images
-    runs-on: ubuntu-latest
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.version
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to GitHub Packages
-        uses: docker/login-action@v3
-        with:
-          registry: docker.pkg.github.com
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get version
-        id: get_version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-          echo "Version to release: ${{ steps.get_version.outputs.version }}"
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd
-          tags: |
-            type=raw,value=${{ steps.get_version.outputs.version }}
-            type=raw,value=latest
-
-      - name: Build and push multi-platform Docker images
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:${{ steps.get_version.outputs.version }}
-            docker.pkg.github.com/${{ env.IMAGE_NAME }}/eos-mb-http-sd:latest
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
   release:
     name: Create Release
-    needs: [build, docker-build]
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.version
     permissions:
@@ -235,36 +150,9 @@ jobs:
             # Create a new release
             echo "Executing: gh release create ${{ steps.get_version.outputs.version }} --title 'Release ${{ steps.get_version.outputs.version }}' --notes 'Release ${{ steps.get_version.outputs.version }} of ${{ env.BINARY_NAME }}' --draft=false --prerelease=false"
             
-            # Create release notes with Docker image information
+            # Create release notes
             cat > release_notes.md << EOF
 # Release ${{ steps.get_version.outputs.version }} of ${{ env.BINARY_NAME }}
-
-## Docker Images
-
-This release includes Docker images for both GitHub Container Registry and GitHub Packages:
-
-### GitHub Container Registry
-- **Image**: \`ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.version }}\`
-- **Latest**: \`ghcr.io/${{ github.repository }}:latest\`
-- **Platforms**: linux/amd64, linux/arm64
-
-### GitHub Packages
-- **Image**: \`docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:${{ steps.get_version.outputs.version }}\`
-- **Latest**: \`docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:latest\`
-- **Platforms**: linux/amd64, linux/arm64
-
-## Usage
-
-\`\`\`bash
-# Pull from GitHub Container Registry
-docker pull ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.version }}
-
-# Pull from GitHub Packages
-docker pull docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:${{ steps.get_version.outputs.version }}
-
-# Run the container
-docker run -p 8080:8080 ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.version }}
-\`\`\`
 
 ## Binary Downloads
 

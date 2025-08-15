@@ -16,7 +16,6 @@ A Go-based service that implements Prometheus HTTP Service Discovery for MinIO (
 10. [Usage Examples](#-usage-examples)
 11. [Troubleshooting](#-troubleshooting)
 12. [Security Considerations](#-security-considerations)
-13. [GitHub Actions](#-github-actions)
 
 ---
 
@@ -574,35 +573,7 @@ minio-prometheus-sd -minio-use-ssl -scrape-interval=30s
 
 ### **Using Docker**
 
-#### **Option 1: Use Pre-built Images (Recommended)**
-
-We provide pre-built Docker images for both GitHub Container Registry and GitHub Packages:
-
-**GitHub Container Registry (ghcr.io):**
-```bash
-# Pull the latest image
-docker pull ghcr.io/${{ github.repository }}:latest
-
-# Pull a specific version
-docker pull ghcr.io/${{ github.repository }}:v1.0.0
-
-# Run the container
-docker run -p 8080:8080 ghcr.io/${{ github.repository }}:latest
-```
-
-**GitHub Packages (docker.pkg.github.com):**
-```bash
-# Pull the latest image
-docker pull docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:latest
-
-# Pull a specific version
-docker pull docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:v1.0.0
-
-# Run the container
-docker run -p 8080:8080 docker.pkg.github.com/${{ github.repository }}/eos-mb-http-sd:latest
-```
-
-#### **Option 2: Build from Source**
+#### **Build from Source**
 
 1. **Build the image**:
    ```bash
@@ -633,9 +604,7 @@ docker run -p 8080:8080 docker.pkg.github.com/${{ github.repository }}/eos-mb-ht
 
 #### **Docker Image Features**
 
-- **Multi-platform support**: linux/amd64 and linux/arm64
 - **Optimized size**: Based on Alpine Linux for minimal footprint
-- **Security**: Regular vulnerability scanning with Trivy
 - **Health checks**: Built-in health check endpoint at `/health`
 - **Non-root user**: Runs as non-root for security
 
@@ -1101,60 +1070,7 @@ curl "http://localhost:9090/api/v1/targets" | jq
 
 ---
 
-## 🚀 **GitHub Actions**
 
-This repository includes comprehensive GitHub Actions workflows for automated Docker image building, testing, and publishing.
-
-### **Available Workflows**
-
-#### **1. Docker Build and Publish** (`docker.yml`)
-- **Triggers**: Tags, main/master branches, manual dispatch
-- **Purpose**: Build and publish Docker images to GitHub Container Registry and GitHub Packages
-- **Features**: Multi-platform support, security scanning, automatic tagging
-
-#### **2. Docker Test** (`docker-test.yml`)
-- **Triggers**: Pull requests, manual dispatch
-- **Purpose**: Test Docker images without publishing them
-- **Features**: Build testing, runtime testing, vulnerability scanning, Dockerfile linting
-
-#### **3. Release** (`release.yml`)
-- **Triggers**: Tags, manual dispatch
-- **Purpose**: Create comprehensive GitHub releases with binaries and Docker images
-- **Features**: Multi-platform binaries, Docker integration, security scanning
-
-### **Published Docker Images**
-
-#### **GitHub Container Registry (ghcr.io)**
-```bash
-# Latest version
-docker pull ghcr.io/{username}/{repository}:latest
-
-# Specific version
-docker pull ghcr.io/{username}/{repository}:v1.0.0
-```
-
-#### **GitHub Packages (docker.pkg.github.com)**
-```bash
-# Latest version
-docker pull docker.pkg.github.com/{username}/{repository}/eos-mb-http-sd:latest
-
-# Specific version
-docker pull docker.pkg.github.com/{username}/{repository}/eos-mb-http-sd:v1.0.0
-```
-
-### **Features**
-- **Multi-platform support**: linux/amd64 and linux/arm64
-- **Security scanning**: Automated vulnerability scanning with Trivy
-- **Dual registry publishing**: Both GitHub Container Registry and GitHub Packages
-- **Automatic tagging**: Semantic versioning and latest tags
-- **Build caching**: Optimized builds with GitHub Actions cache
-
-### **Getting Started**
-1. **Push a tag** to trigger automatic Docker image publishing
-2. **Create a pull request** to test Docker builds
-3. **Manual dispatch** for custom builds and testing
-
-For detailed workflow documentation, see [GITHUB-ACTIONS.md](GITHUB-ACTIONS.md).
 
 ---
 
