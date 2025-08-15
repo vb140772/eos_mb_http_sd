@@ -22,6 +22,9 @@ jobs:
           - os: linux
             arch: amd64
             suffix: linux-amd64
+          - os: linux
+            arch: arm64
+            suffix: linux-arm64
           - os: darwin
             arch: amd64
             suffix: darwin-amd64
@@ -98,7 +101,7 @@ jobs:
       - name: Upload Release Assets
         run: |
           echo "Uploading assets to release: ${{ steps.get_version.outputs.version }}"
-          for suffix in linux-amd64 darwin-amd64 windows-amd64.exe; do
+          for suffix in linux-amd64 linux-arm64 darwin-amd64 windows-amd64.exe; do
             if [ -f "artifacts/$suffix/eos_mb_http_sd-$suffix" ]; then
               echo "Uploading $suffix asset..."
               gh release upload ${{ steps.get_version.outputs.version }} artifacts/$suffix/eos_mb_http_sd-$suffix
